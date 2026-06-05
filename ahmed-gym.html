@@ -21,6 +21,7 @@
     .sticky{position:sticky;top:0;z-index:100;}
     .card{background:#fff;border:2px solid #E2E2E2;border-radius:14px;margin-bottom:12px;overflow:hidden;transition:border-color .2s,background .2s;}
     .card.done{background:#F0FDF4;border-color:#16A34A;}
+    .card.skip{background:#FEF2F2;border-color:#FCA5A5;}
     .card.extra{border-color:#FF5C00;}
     .wbtn{width:40px;height:40px;border-radius:8px;border:2px solid #E2E2E2;background:#fff;color:#111;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;transition:all .15s;}
     .wbtn.on{background:#FF5C00;border-color:#FF5C00;color:#fff;}
@@ -63,6 +64,7 @@ const LIB = [
   "Preacher Curl Machine","Close Grip Bench Press","Cable Tricep Pushdown",
   "Overhead Cable Tricep Ext","Skull Crushers","Dips","Shoulder Machine",
   "Plank","Cable Crunch","Hanging Leg Raise","Ab Wheel","Pallof Press","Landmine Rotation",
+  "Ab Crunch Machine","Reverse Pec Deck Machine",
   "Standing Calf Raise","Seated Calf Raise","Leg Press Calf Raise","Calf Raise",
 ];
 const ALTS = {
@@ -82,12 +84,14 @@ const ALTS = {
   "Calf Raise":["Seated Calf Raise","Leg Press Calf Raise","Standing Calf Raise"],
   "Hip Thrust Machine":["Barbell Hip Thrust","Glute Bridge","Cable Pull Through"],
   "Leg Extension Machine":["Leg Press","Hack Squat","Bulgarian Split Squat"],
+  "Ab Crunch Machine":["Cable Crunch","Hanging Leg Raise","Plank"],
+  "Reverse Pec Deck Machine":["Rear Delt Fly Machine","Rear Delt Fly DB","Face Pull"],
 };
 const SESSIONS = {
-  "Upper A":[{name:"Machine Chest Press",bw:12.5},{name:"Lat Pulldown",bw:12.5},{name:"Seated Cable Row",bw:15},{name:"Seated Machine OHP",bw:12.5},{name:"Cable Tricep Pushdown",bw:12.5},{name:"Cable Curl",bw:10}],
-  "Lower A":[{name:"Leg Press",bw:20},{name:"Romanian Deadlift",bw:12.5},{name:"Leg Curl Machine",bw:12.5},{name:"Cable Lateral Raise",bw:4},{name:"Calf Raise",bw:"BW+5"}],
-  "Upper B":[{name:"Incline Machine Press",bw:12.5},{name:"Lat Pulldown",bw:12.5},{name:"Seated Cable Row",bw:15},{name:"Shoulder Machine",bw:12.5},{name:"Overhead Cable Tricep Ext",bw:10},{name:"Cable Curl",bw:10}],
-  "Lower B":[{name:"Leg Press",bw:25},{name:"Hip Thrust Machine",bw:"CAL"},{name:"Leg Extension Machine",bw:"CAL"},{name:"Leg Curl Machine",bw:12.5},{name:"Calf Raise",bw:"BW+5"}],
+  "Upper A":[{name:"Machine Chest Press",bw:12.5},{name:"Lat Pulldown",bw:12.5},{name:"Seated Cable Row",bw:15},{name:"Seated Machine OHP",bw:12.5},{name:"Reverse Pec Deck Machine",bw:"CAL"},{name:"Cable Tricep Pushdown",bw:12.5},{name:"Cable Curl",bw:10}],
+  "Lower A":[{name:"Leg Press",bw:20},{name:"Romanian Deadlift",bw:12.5},{name:"Leg Curl Machine",bw:12.5},{name:"Cable Lateral Raise",bw:4},{name:"Calf Raise",bw:"BW+5"},{name:"Ab Crunch Machine",bw:"CAL"}],
+  "Upper B":[{name:"Incline Machine Press",bw:12.5},{name:"Lat Pulldown",bw:12.5},{name:"Seated Cable Row",bw:15},{name:"Shoulder Machine",bw:12.5},{name:"Reverse Pec Deck Machine",bw:"CAL"},{name:"Overhead Cable Tricep Ext",bw:10},{name:"Cable Curl",bw:10}],
+  "Lower B":[{name:"Leg Press",bw:25},{name:"Hip Thrust Machine",bw:"CAL"},{name:"Leg Extension Machine",bw:"CAL"},{name:"Leg Curl Machine",bw:12.5},{name:"Calf Raise",bw:"BW+5"},{name:"Ab Crunch Machine",bw:"CAL"}],
 };
 const SORDER = ["Upper A","Lower A","Upper B","Lower B"];
 const gBlock = w => w<=4?1:w<=8?2:w<=11?3:"deload";
@@ -128,20 +132,28 @@ function ek(){return "w"+S.week+"-"+S.session.replace(" ","");}
 function getEx(i){
   const ex=SESSIONS[S.session][i],b=BDATA[gBlock(S.week)];
   const sw=S.swaps[sk(S.session,i)],w=S.weights[wk(S.session,i)];
+  const rec=S.log[lk(i)]||{};
+  const status=rec.status??(rec.done?"done":null);
   return {name:sw||ex.name,orig:ex.name,swapped:!!sw,alts:ALTS[ex.name]||[],
-    sets:S.log[lk(i)]?.sets??b.sets,reps:S.log[lk(i)]?.reps??b.reps,
-    weight:w!==undefined?w:ex.bw,done:S.log[lk(i)]?.done??false};
+    sets:rec.sets??b.sets,reps:rec.reps??b.reps,
+    weight:w!==undefined?w:ex.bw,status:status,done:status==="done",skip:status==="skip"};
 }
-function sDone(w,s){return SESSIONS[s].every((_,i)=>S.log["w"+w+"-"+s.replace(" ","")+"-"+i]?.done);}
+function sDone(w,s){return SESSIONS[s].every((_,i)=>{const r=S.log["w"+w+"-"+s.replace(" ","")+"-"+i];return r&&(r.status==="done"||r.status==="skip"||r.done===true);});}
 function search(q){if(!q||q.trim().length<2)return[];const lo=q.trim().toLowerCase();return LIB.filter(e=>e.toLowerCase().includes(lo)).slice(0,6);}
 
 function fmtLog(){
   const b=gBlock(S.week),bd=BDATA[b],ex=SESSIONS[S.session],extras=S.extras[ek()]||[];
   const d=new Date().toLocaleDateString("en-GB");
+  // only include exercises that are checked (done)
+  const doneBase=ex.map((_,i)=>getEx(i)).filter(e=>e.status==="done");
+  const doneExtra=extras.filter(e=>e.done);
+  if(doneBase.length===0&&doneExtra.length===0){
+    return "No exercises checked yet for "+S.session+" (Week "+S.week+").\nTick off what you completed, then tap COPY LOG.";
+  }
   let o="["+d+"] — "+S.session+"\nWeek "+S.week+" | Block "+(b==="deload"?"Deload":b)+" ("+bd.label+")\n\n";
   o+="Exercise                       | Sets x Reps | Weight\n"+"─".repeat(57)+"\n";
-  ex.forEach((_,i)=>{const e=getEx(i);o+=(e.name+" ").padEnd(31)+"| "+(e.sets+" x "+e.reps).padEnd(11)+"| "+e.weight+" kg  "+(e.done?"✓":"○")+"\n";});
-  extras.forEach(e=>{o+=((e.name+" [EXTRA]")+" ").padEnd(31)+"| "+((e.sets||bd.sets)+" x "+(e.reps||bd.reps)).padEnd(11)+"| "+(e.weight||"—")+" kg  "+(e.done?"✓":"○")+"\n";});
+  doneBase.forEach(e=>{o+=(e.name+" ").padEnd(31)+"| "+(e.sets+" x "+e.reps).padEnd(11)+"| "+e.weight+" kg\n";});
+  doneExtra.forEach(e=>{o+=((e.name+" [EXTRA]")+" ").padEnd(31)+"| "+((e.sets||bd.sets)+" x "+(e.reps||bd.reps)).padEnd(11)+"| "+(e.weight||"—")+" kg\n";});
   o+="\nSession notes: [add here before pasting to Claude]\n";return o;
 }
 
@@ -171,8 +183,8 @@ function render(){
 }
 function html(){
   const b=gBlock(S.week),bd=BDATA[b],ex=SESSIONS[S.session],extras=S.extras[ek()]||[];
-  const tot=ex.length+extras.length;
-  const dn=ex.filter((_,i)=>getEx(i).done).length+extras.filter(e=>e.done).length;
+  const tot=ex.length;
+  const dn=ex.filter((_,i)=>getEx(i).status).length;
   const pct=tot>0?(dn/tot*100):0,allDone=dn===tot&&tot>0;
   return `
   <div class="sticky" style="background:#111;color:#fff;padding:16px 18px 12px;">
@@ -214,7 +226,7 @@ function html(){
     ${allDone?`<div style="background:#16A34A;border-radius:14px;padding:18px;text-align:center;color:#fff;font-weight:700;font-size:16px;letter-spacing:.05em;margin-bottom:14px;">SESSION COMPLETE 💪<br><span style="font-size:12px;opacity:.85;font-weight:400;">Tap COPY LOG and paste to Claude.</span></div>`:""}
     <div style="background:#fff;border:1px solid #E2E2E2;border-radius:12px;padding:14px 16px;margin-bottom:20px;">
       <div style="font-size:11px;font-weight:700;letter-spacing:.1em;margin-bottom:8px;">HOW TO LOG</div>
-      <div style="font-size:12px;color:#666;line-height:1.8;">1. Tick off exercises as you go<br>2. Tap <span style="color:#FF5C00;font-weight:700;">COPY LOG</span> when done<br>3. Paste into Claude chat<br>4. PT updates weights &amp; tracks progress</div>
+      <div style="font-size:12px;color:#666;line-height:1.8;">1. Mark each exercise ✓ done or ✕ skip<br>2. When all are marked, the day turns ✓<br>3. Tap <span style="color:#FF5C00;font-weight:700;">COPY LOG</span> (copies only ✓ done)<br>4. Paste into Claude chat</div>
     </div>
   </div>`;
 }
@@ -223,17 +235,18 @@ function cardHtml(i,bd){
   const cal=e.weight==="CAL"||e.weight===""||e.weight===undefined;
   const safe=e.name.replace(/'/g,"\\'");
   return `
-  <div class="card${e.done?" done":""}">
-    <div style="padding:14px 14px 8px;display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
+  <div class="card${e.done?" done":e.skip?" skip":""}">
+    <div style="padding:14px 14px 8px;display:flex;justify-content:space-between;align-items:flex-start;gap:7px;">
       <div style="flex:1;min-width:0;">
-        <div style="font-size:14px;font-weight:700;color:${e.done?"#16A34A":"#111"};text-decoration:${e.done?"line-through":"none"};">
+        <div style="font-size:14px;font-weight:700;color:${e.done?"#16A34A":e.skip?"#B91C1C":"#111"};text-decoration:${e.done||e.skip?"line-through":"none"};">
           ${e.name}
           ${e.swapped?`<button onclick="rstSwap(${i})" style="margin-left:8px;font-size:9px;color:#666;background:none;border:1px solid #E2E2E2;border-radius:4px;padding:2px 5px;font-weight:700;">RESET</button>`:""}
         </div>
         ${e.alts.length>0?`<button onclick="togAlt('${ak}')" style="margin-top:5px;padding:0;border:none;background:none;color:#FF5C00;font-size:10px;font-weight:700;letter-spacing:.08em;">${showAlt?"▲ CLOSE":"▼ SWAP EXERCISE"}</button>`:""}
       </div>
-      <button class="iconbtn" title="Copy name" onclick="cpName('${safe}')">📋</button>
-      <button onclick="togDone(${i})" style="width:36px;height:36px;border-radius:10px;flex-shrink:0;border:2px solid ${e.done?"#16A34A":"#E2E2E2"};background:${e.done?"#16A34A":"#fff"};display:flex;align-items:center;justify-content:center;"><span style="font-size:18px;color:${e.done?"#fff":"#E2E2E2"};">${e.done?"✓":"○"}</span></button>
+      <button class="iconbtn" title="Copy name" onclick="cpName('${safe}')" style="width:34px;height:34px;">📋</button>
+      <button title="Skip" onclick="setStat(${i},'skip')" style="width:34px;height:34px;border-radius:9px;flex-shrink:0;border:2px solid ${e.skip?"#DC2626":"#E2E2E2"};background:${e.skip?"#DC2626":"#fff"};display:flex;align-items:center;justify-content:center;"><span style="font-size:16px;font-weight:800;color:${e.skip?"#fff":"#C8C8C8"};">✕</span></button>
+      <button title="Done" onclick="setStat(${i},'done')" style="width:34px;height:34px;border-radius:9px;flex-shrink:0;border:2px solid ${e.done?"#16A34A":"#E2E2E2"};background:${e.done?"#16A34A":"#fff"};display:flex;align-items:center;justify-content:center;"><span style="font-size:17px;font-weight:800;color:${e.done?"#fff":"#C8C8C8"};">✓</span></button>
     </div>
     ${showAlt?`<div style="padding:0 14px 10px;"><div style="font-size:10px;color:#666;letter-spacing:.1em;font-weight:700;margin-bottom:6px;">TAP TO SWAP:</div>${e.alts.map(a=>{const on=e.name===a;return`<button class="abtn${on?" on":""}" onclick="swpEx(${i},'${a.replace(/'/g,"\\'")}')"> ${on?"✓ ":"→ "}${a}${on?" <span style='font-size:10px;opacity:.8;margin-left:6px;'>ACTIVE</span>":""}</button>`;}).join("")}</div>`:""}
     <div style="padding:4px 14px 14px;display:flex;gap:8px;align-items:flex-end;">
@@ -278,7 +291,7 @@ function addHtml(){
 function setWk(w){upd({week:w,openAlt:null});}
 function setSes(s){upd({session:s,openAlt:null,search:""});}
 function togAlt(k){upd({openAlt:S.openAlt===k?null:k});}
-function togDone(i){const k=lk(i);S.log[k]={...(S.log[k]||{}),done:!(S.log[k]?.done)};upd({});}
+function setStat(i,val){const k=lk(i);const cur=getEx(i).status;const ns=cur===val?null:val;const rec={...(S.log[k]||{}),status:ns};delete rec.done;S.log[k]=rec;upd({});}
 function setFld(i,f,v){const n=parseInt(v);if(!isNaN(n)&&n>0){const k=lk(i);S.log[k]={...(S.log[k]||{}),[f]:n};sv();}}
 function setWt(i,v){const n=parseFloat(v);S.weights[wk(S.session,i)]=isNaN(n)?"":n;sv();}
 function swpEx(i,a){S.swaps[sk(S.session,i)]=a;S.weights[wk(S.session,i)]="CAL";upd({openAlt:null});}
